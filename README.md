@@ -18,10 +18,10 @@ ORCA reads inputs staged in a modality's Synapse **input folder**, runs the corr
 | # | Modality | Underlying pipeline | Directory |
 |---|----------|---------------------|-----------|
 | 1 | Bulk RNA-seq (PDX; BBSplit mouse/human) | [nf-core/rnaseq](https://github.com/nf-core/rnaseq) | [`bulk-rnaseq/`](bulk-rnaseq/) |
-| 2 | scRNA-seq | [nf-core/scrnaseq](https://github.com/nf-core/scrnaseq) | [`scrnaseq/`](scrnaseq/) |
+| 2 | scRNA-seq | [nf-core/scrnaseq](https://github.com/nf-core/scrnaseq) | [`sc-rnaseq/`](sc-rnaseq/) |
 | 3 | Bulk WGS | [nf-core/sarek](https://github.com/nf-core/sarek) | [`bulk-wgs/`](bulk-wgs/) |
 | 4 | Bulk WES (germline first) | [nf-core/sarek](https://github.com/nf-core/sarek) | [`bulk-wes/`](bulk-wes/) |
-| 5 | Spatial transcriptomics (10x Visium) | [sage-bdf/synapse_spatialvi_nf_pipeline](https://github.com/sage-bdf/synapse_spatialvi_nf_pipeline) | [`spatial-trxn/`](spatial-trxn/) |
+| 5 | Spatial transcriptomics (10x Visium) | [sage-bdf/synapse_spatialvi_nf_pipeline](https://github.com/sage-bdf/synapse_spatialvi_nf_pipeline) | [`spatial-transcriptomics/`](spatial-transcriptomics/) |
 
 Modalities 1 through 4 build on community [nf-core](https://nf-co.re/) pipelines; spatial transcriptomics runs on a Sage-authored pipeline.
 
