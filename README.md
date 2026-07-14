@@ -1,42 +1,46 @@
-# compute-automator
+# Compute Automator
 
-Centralized reference repository for the **BDF Compute Automator**. It houses, in one place, the artifacts needed to run each supported data modality end-to-end through a Nextflow pipeline orchestrated by [ORCA](https://github.com/Sage-Bionetworks-Workflows/orca-recipes) with results returned to Synapse.
+Centralized reference repository for the **Biomedical Data Fabric (BDF) Compute Automator**, the standardized way BDF processes raw sequencing data into analysis-ready results.
 
-Tracking issue: [BDFLINC-224](https://sagebionetworks.jira.com/browse/BDFLINC-224) · Initiative: [BDFLINC-25 — BDF Compute Automator](https://sagebionetworks.jira.com/browse/BDFLINC-25)
+Each supported data modality is defined here as a self-contained, reproducible unit: a sample sheet describing the inputs, a pipeline configuration, an [ORCA](https://github.com/Sage-Bionetworks-Workflows/orca-recipes) recipe that runs the workflow, and a pointer to where the processed outputs live in Synapse. The goal is that any team member can look up a modality, understand exactly how it runs, and reproduce or extend it without tribal knowledge.
 
-## What's here
+## How it works
 
-Each modality directory holds the three artifacts that drive an automated run:
+```
+Synapse input folder  ──▶  ORCA recipe  ──▶  Nextflow pipeline  ──▶  Synapse output dataset
+   (raw data)               (orchestration)     (nf-core / Sage)         (analysis-ready)
+```
 
-1. **Input sample sheet** — nf-core / spatialvi format (`samplesheet.csv`)
-2. **ORCA recipe incl. config** — pointer to the orca-recipe + the workflow `nextflow.config`
-3. **Output dataset** — pointer to the processed results in Synapse
-
-Each modality is backed by a Synapse project with a designated **input folder** and **output folder**. Where data has already been processed, reuse the processed files — avoid reprocessing.
+ORCA reads inputs staged in a modality's Synapse **input folder**, runs the corresponding Nextflow pipeline with the pinned `nextflow.config`, and returns results to the modality's Synapse **output folder** as a versioned dataset. Where data has already been processed, reuse the published outputs rather than reprocessing.
 
 ## Supported modalities
 
 | # | Modality | Underlying pipeline | Directory |
-|---|----------|--------------------|-----------|
+|---|----------|---------------------|-----------|
 | 1 | Bulk RNA-seq (PDX; BBSplit mouse/human) | [nf-core/rnaseq](https://github.com/nf-core/rnaseq) | [`bulk-rnaseq/`](bulk-rnaseq/) |
 | 2 | scRNA-seq | [nf-core/scrnaseq](https://github.com/nf-core/scrnaseq) | [`scrnaseq/`](scrnaseq/) |
 | 3 | Bulk WGS | [nf-core/sarek](https://github.com/nf-core/sarek) | [`bulk-wgs/`](bulk-wgs/) |
 | 4 | Bulk WES (germline first) | [nf-core/sarek](https://github.com/nf-core/sarek) | [`bulk-wes/`](bulk-wes/) |
-| 5 | Spatial transcriptomics (10x Visium) | [sage-bdf/synapse_spatialvi_nf_pipeline](https://github.com/sage-bdf/synapse_spatialvi_nf_pipeline) *(Sage original)* | [`spatial-trxn/`](spatial-trxn/) |
+| 5 | Spatial transcriptomics (10x Visium) | [sage-bdf/synapse_spatialvi_nf_pipeline](https://github.com/sage-bdf/synapse_spatialvi_nf_pipeline) | [`spatial-trxn/`](spatial-trxn/) |
 
-Modalities 1–4 run off community nf-core pipelines; spatial transcriptomics is Sage's original contribution.
+Modalities 1 through 4 build on community [nf-core](https://nf-co.re/) pipelines; spatial transcriptomics runs on a Sage-authored pipeline.
 
-## Layout
+## Repository layout
+
+Every modality directory follows the same contract:
 
 ```
-compute-automator/
-├── bulk-rnaseq/    samplesheet.csv, nextflow.config, README (orca-recipe + output synID)
-├── scrnaseq/       …
-├── bulk-wgs/       …
-├── bulk-wes/       …
-└── spatial-trxn/   … (references sage-bdf/synapse_spatialvi_nf_pipeline)
+<modality>/
+├── samplesheet.csv     # inputs, in the pipeline's expected sample-sheet format
+├── nextflow.config     # pinned pipeline configuration for this modality
+└── README.md           # ORCA recipe link, Synapse input/output pointers, run notes
 ```
 
-## Status
+## Per-modality artifacts
 
-Scaffold with per-modality templates. Sample sheets, configs, and Synapse project IDs are being filled in — see each directory's README for the current state and open TODOs.
+Each directory's `README.md` is the source of truth for that modality and records:
+
+- **Input sample sheet**: `samplesheet.csv`, in the format the pipeline expects (columns documented in the modality README).
+- **Processing recipe**: a link to the [ORCA recipe](https://github.com/Sage-Bionetworks-Workflows/orca-recipes) plus the pinned `nextflow.config` used for the run.
+- **Output dataset**: the Synapse dataset holding analysis-ready results.
+- **Synapse project**: the input and output folder locations backing the modality.
