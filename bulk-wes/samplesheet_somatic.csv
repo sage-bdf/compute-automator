@@ -1,0 +1,5 @@
+patient,sample,fastq_1,fastq_2,lane,status
+PATIENT_1,PATIENT_1_normal,syn://synID,syn://synID,PATIENT_1_normal-lane-1,0
+PATIENT_1,PATIENT_1_tumor,syn://synID,syn://synID,PATIENT_1_tumor-lane-1,1
+PATIENT_2,PATIENT_2_normal,syn://synID,syn://synID,PATIENT_2_normal-lane-1,0
+PATIENT_2,PATIENT_2_tumor,syn://synID,syn://synID,PATIENT_2_tumor-lane-1,1
