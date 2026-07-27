@@ -220,7 +220,8 @@ def prepare_synstage_info(dataset: Dataset) -> LaunchInfo:
             "outdir": dataset.staging_location,
             "entry": "synstage",
         },
-        workspace_secrets=["SYNAPSE_AUTH_TOKEN"]  # set as workspace secret (not user secret) in Tower
+        workspace_secrets=["nfosi_service_synapse"],  # workspace secret; aliased to SYNAPSE_AUTH_TOKEN in pre_run_script below
+        pre_run_script='export SYNAPSE_AUTH_TOKEN="$nfosi_service_synapse"',  # nf-synapse/synapseclient reads the fixed name SYNAPSE_AUTH_TOKEN
     )
 
 
@@ -279,7 +280,8 @@ def prepare_synindex_launch_info(dataset: Dataset) -> LaunchInfo:
             "parent_id": dataset.synapse_id_for_output,
             "entry": "synindex",
         },
-        workspace_secrets=["SYNAPSE_AUTH_TOKEN"]  # set as workspace secret (not user secret) in Tower
+        workspace_secrets=["nfosi_service_synapse"],  # workspace secret; aliased to SYNAPSE_AUTH_TOKEN in pre_run_script below
+        pre_run_script='export SYNAPSE_AUTH_TOKEN="$nfosi_service_synapse"',  # nf-synapse/synapseclient reads the fixed name SYNAPSE_AUTH_TOKEN
     )
 
 
