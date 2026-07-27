@@ -15,7 +15,8 @@ Prerequisites:
     workspace secret (not a user secret).
   - Export Tower credentials before running:
       export TOWER_ACCESS_TOKEN="<token>"
-      export NEXTFLOWTOWER_CONNECTION_URI="https://:<token>@tower.sagebionetworks.org/api?workspace=sage-bionetworks%2Fntap-add5-project"
+      export TOWER_WORKSPACE="sage-bionetworks/ntap-add5-project"
+      export TOWER_API_ENDPOINT="https://tower.sagebionetworks.org/api"
 
 Usage:
   python sarek_somatic_workflow.py [step ...] [--run-number N]
@@ -24,15 +25,66 @@ Usage:
 """
 import asyncio
 import argparse
+import os
 from dataclasses import dataclass
 
 import boto3
 from orca.services.nextflowtower import NextflowTowerOps
+from orca.services.nextflowtower.client import NextflowTowerClient
+from orca.services.nextflowtower.config import NextflowTowerConfig
 from orca.services.nextflowtower.models import LaunchInfo
 from synapseclient import Synapse
 
 session = boto3.Session(profile_name="tower")
 s3 = session.client("s3")
+
+
+def _patch_tower_client_double_slash():
+    """Fix py-orca URL construction: path has leading slash, causing // in URL and 401.
+
+    orca builds request URLs by joining the api_endpoint with a leading-slash path,
+    which yields e.g. https://tower.sagebionetworks.org/api//workflow/launch. The
+    doubled slash triggers 400/401 responses from the Tower API. Stripping the leading
+    slash from each request path fixes it. (Ported from spatialvi_workflow.py.)
+    """
+    _original_request = NextflowTowerClient.request
+
+    def _patched_request(self, method: str, path: str, **kwargs):
+        path = path.lstrip("/")
+        return _original_request(self, method, path, **kwargs)
+
+    NextflowTowerClient.request = _patched_request
+
+
+def get_tower_ops() -> NextflowTowerOps:
+    """Create NextflowTowerOps with config from the three TOWER_* environment variables.
+
+    Uses explicit TOWER_ACCESS_TOKEN / TOWER_WORKSPACE / TOWER_API_ENDPOINT rather than
+    the packed NEXTFLOWTOWER_CONNECTION_URI, and applies the double-slash URL patch.
+    """
+    _patch_tower_client_double_slash()
+
+    token = os.environ.get("TOWER_ACCESS_TOKEN") or os.environ.get("TOWER_AUTH_TOKEN")
+    workspace = os.environ.get("TOWER_WORKSPACE")
+    api_endpoint = os.environ.get("TOWER_API_ENDPOINT", "https://api.tower.nf")
+
+    if not token:
+        raise SystemExit(
+            "Missing TOWER_ACCESS_TOKEN. Set it before running:\n"
+            "  export TOWER_ACCESS_TOKEN=your-token"
+        )
+    if not workspace:
+        raise SystemExit(
+            "Missing TOWER_WORKSPACE. Set it before running (org/workspace format):\n"
+            "  export TOWER_WORKSPACE=sage-bionetworks/ntap-add5-project"
+        )
+
+    config = NextflowTowerConfig(
+        api_endpoint=api_endpoint.rstrip("/"),
+        auth_token=token,
+        workspace=workspace,
+    )
+    return NextflowTowerOps(config=config)
 
 
 async def main():
@@ -41,7 +93,7 @@ async def main():
     parser.add_argument('--run-number', type=int, default=1, help='Run version number (Default: 1). Increment to preserve previous outputs.')
     args = parser.parse_args()
 
-    ops = NextflowTowerOps()
+    ops = get_tower_ops()
     datasets = generate_datasets(run_number=args.run_number)
     runs = [run_workflows(ops, dataset, args.step) for dataset in datasets]
     statuses = await asyncio.gather(*runs)
@@ -220,8 +272,7 @@ def prepare_synstage_info(dataset: Dataset) -> LaunchInfo:
             "outdir": dataset.staging_location,
             "entry": "synstage",
         },
-        workspace_secrets=["nfosi_service_synapse"],  # workspace secret; aliased to SYNAPSE_AUTH_TOKEN in pre_run_script below
-        pre_run_script='export SYNAPSE_AUTH_TOKEN="$nfosi_service_synapse"',  # nf-synapse/synapseclient reads the fixed name SYNAPSE_AUTH_TOKEN
+        workspace_secrets=["SYNAPSE_AUTH_TOKEN"]  # set as workspace secret (not user secret) in Tower
     )
 
 
@@ -280,8 +331,7 @@ def prepare_synindex_launch_info(dataset: Dataset) -> LaunchInfo:
             "parent_id": dataset.synapse_id_for_output,
             "entry": "synindex",
         },
-        workspace_secrets=["nfosi_service_synapse"],  # workspace secret; aliased to SYNAPSE_AUTH_TOKEN in pre_run_script below
-        pre_run_script='export SYNAPSE_AUTH_TOKEN="$nfosi_service_synapse"',  # nf-synapse/synapseclient reads the fixed name SYNAPSE_AUTH_TOKEN
+        workspace_secrets=["SYNAPSE_AUTH_TOKEN"]  # set as workspace secret (not user secret) in Tower
     )
 
 
