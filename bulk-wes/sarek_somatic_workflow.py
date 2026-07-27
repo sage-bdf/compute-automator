@@ -10,10 +10,6 @@ Orchestrates four steps:
 Somatic mode is set by the samplesheet, not a flag: a tumor (status=1) and matched
 normal (status=0) sharing a `patient` id trigger tumor-vs-normal calling.
 
-Config reproduces the JHU NF1 Biobank release-2 run (JH_batch1): sarek 3.1.2,
-GATK.GRCh38, WES + Agilent V6 intervals, callers strelka,mutect2,vep.
-Ref: https://github.com/nf-osi/biobank-release-2
-
 Prerequisites:
   - pip install py-orca; AWS profile `tower`; SYNAPSE_AUTH_TOKEN set as a Tower
     workspace secret (not a user secret).
@@ -178,11 +174,11 @@ def generate_datasets(run_number: int = 1) -> list[Dataset]:
     return [
         Dataset(
             # JH_batch1 paired tumor/normal (triads: blood normal + benign + malignant)
-            id="syn52236715",
-            samplesheet="sarek_JH_batch1_1_reprocess_samplesheet.csv",
+            id="syn76340211",
+            samplesheet="jhu_biobank_wes_demo_samplesheet.csv",
             staging_key="samplesheets/Sarek_Process/EAGER-somatic/",
             bucket_name="ntap-add5-project-tower-bucket",
-            synapse_id_for_output="TODO-syn-JH_batch1-output-folder",
+            synapse_id_for_output="syn76340288",
             institution="JH",
             run_number=run_number,
         ),
