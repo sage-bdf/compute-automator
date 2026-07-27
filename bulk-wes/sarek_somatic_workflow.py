@@ -352,7 +352,7 @@ async def run_workflows(ops: NextflowTowerOps, dataset: Dataset, step):
     if 'all' in step or 'sarek' in step:
         print('starting data processing pipeline')
         sarek_info = prepare_sarek_launch_info(dataset)
-        sarek_run_id = ops.launch_workflow(sarek_info, "spot", ignore_previous_runs=True)
+        sarek_run_id = ops.launch_workflow(sarek_info, "ondemand", ignore_previous_runs=True)  # on-demand: sarek is the long step; avoids spot reclaim mid-run
         status = await ops.monitor_workflow(run_id=sarek_run_id, wait_time=60 * 2)
         print(status)
 
