@@ -154,8 +154,8 @@ class Dataset:
 
     @property
     def synstage_run_name(self) -> str:
-        """The name of the synstage run."""
-        return f"synstage_{self.id}_{self.run_number}"
+        """The name of the synstage run (no run_number to align with staged_samplesheet_location)."""
+        return f"synstage_{self.id}"
 
     @property
     def synindex_run_name(self) -> str:
