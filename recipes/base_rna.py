@@ -1,6 +1,6 @@
 """Shared infrastructure for BDF ORCA recipes.
 
-Common Tower auth, Dataset structure, and workflow orchestration (fetch_samplesheet -> ssynstage ->  modality-specific pipeline -> synindex)
+Common Tower auth, Dataset structure, and workflow orchestration (fetch_samplesheet -> synstage -> modality-specific pipeline -> synindex)
 """
 import asyncio
 import argparse
@@ -10,15 +10,22 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
 
-import boto3
 from orca.services.nextflowtower import NextflowTowerOps
 from orca.services.nextflowtower.client import NextflowTowerClient
 from orca.services.nextflowtower.config import NextflowTowerConfig
 from orca.services.nextflowtower.models import LaunchInfo
 from synapseclient import Synapse
 
-session = boto3.Session(profile_name="tower")
-s3 = session.client("s3")
+_s3_client = None
+
+def _get_s3_client():
+    """Lazy-load S3 client to avoid requiring 'tower' AWS profile at import time."""
+    global _s3_client
+    if _s3_client is None:
+        import boto3
+        session = boto3.Session(profile_name="tower")
+        _s3_client = session.client("s3")
+    return _s3_client
 
 # Nextflow version (same as sarek_somatic_workflow baseline)
 NXF_VER = "25.10.2"
@@ -32,6 +39,8 @@ process {
 """
 
 
+_tower_client_patched = False
+
 def _patch_tower_client_double_slash():
     """Fix py-orca URL construction: path has leading slash, causing // in URL and 401.
 
@@ -39,7 +48,13 @@ def _patch_tower_client_double_slash():
     which yields e.g. https://tower.sagebionetworks.org/api//workflow/launch. The
     doubled slash triggers 400/401 responses from the Tower API. Stripping the leading
     slash from each request path fixes it.
+
+    Idempotent: only patches once per process.
     """
+    global _tower_client_patched
+    if _tower_client_patched:
+        return
+
     _original_request = NextflowTowerClient.request
 
     def _patched_request(self, method: str, path: str, **kwargs):
@@ -47,6 +62,7 @@ def _patch_tower_client_double_slash():
         return _original_request(self, method, path, **kwargs)
 
     NextflowTowerClient.request = _patched_request
+    _tower_client_patched = True
 
 
 def get_tower_ops() -> NextflowTowerOps:
@@ -63,7 +79,7 @@ def get_tower_ops() -> NextflowTowerOps:
 
     if not token:
         raise SystemExit(
-            "Missing TOWER_ACCESS_TOKEN. Set it before running:\n"
+            "Missing TOWER_ACCESS_TOKEN or TOWER_AUTH_TOKEN. Set one before running:\n"
             "  export TOWER_ACCESS_TOKEN=your-token"
         )
     if not workspace:
@@ -139,7 +155,7 @@ class Dataset:
     @property
     def synstage_run_name(self) -> str:
         """The name of the synstage run."""
-        return f"synstage_{self.id}"
+        return f"synstage_{self.id}_{self.run_number}"
 
     @property
     def synindex_run_name(self) -> str:
@@ -156,7 +172,7 @@ def fetch_samplesheet(syn: Synapse, dataset: Dataset) -> None:
     """
     samplesheet_file = syn.get(dataset.id, version=dataset.version)
     samplesheet_file_path = samplesheet_file.path
-    s3.upload_file(
+    _get_s3_client().upload_file(
         samplesheet_file_path, dataset.bucket_name, dataset.samplesheet_to_stage_key
     )
 
@@ -210,58 +226,61 @@ def prepare_synindex_info(dataset: Dataset) -> LaunchInfo:
 async def run_workflows(
     ops: NextflowTowerOps,
     dataset: Dataset,
-    step,
+    step: list,
     prepare_pipeline_info: Callable[[Dataset], LaunchInfo],
 ) -> None:
-    """Orchestrate the four-step workflow: fetch, synstage, pipeline, synindex.
+    """Orchestrate the four-step workflow: fetch_samplesheet, synstage, pipeline, synindex.
 
-    Runs steps in sequence, checking success after each step before proceeding.
+    Runs requested steps in sequence, checking success after each step before proceeding.
     Stops if any step fails.
 
     Arguments:
         ops: NextflowTowerOps instance
         dataset: The dataset to process
-        step: Which step(s) to run (or 'all')
+        step: List of steps to run (e.g., ['all'], ['synstage', 'pipeline']) or 'all' for all steps
         prepare_pipeline_info: Callable that returns LaunchInfo for the pipeline-specific step
     """
-    if 'all' in step or 'fetch_samplesheet' in step:
-        print('fetching samplesheet')
-        syn = Synapse()
-        syn.login()
-        fetch_samplesheet(syn, dataset)
+    # Determine which steps to run
+    step_order = ['fetch_samplesheet', 'synstage', 'pipeline', 'synindex']
+    if 'all' in step:
+        steps_to_run = step_order
+    else:
+        steps_to_run = [s for s in step_order if s in step]
 
-    if 'all' in step or 'synstage' in step:
-        print('starting synstage')
-        synstage_info = prepare_synstage_info(dataset)
-        synstage_run_id = ops.launch_workflow(synstage_info, "spot", ignore_previous_runs=True)
-        status = await ops.monitor_workflow(run_id=synstage_run_id, wait_time=60 * 2)
-        print(status)
-        if not status.is_successful:
-            raise SystemExit(f"synstage failed with status: {status.status}")
-        # Don't continue to pipeline if only synstage was requested
-        if 'all' not in step:
-            return
+    # Execute requested steps in order
+    for current_step in steps_to_run:
+        if current_step == 'fetch_samplesheet':
+            print('fetching samplesheet')
+            syn = Synapse()
+            syn.login()
+            fetch_samplesheet(syn, dataset)
 
-    if 'all' in step or 'pipeline' in step:
-        print('starting pipeline')
-        pipeline_info = prepare_pipeline_info(dataset)
-        pipeline_run_id = ops.launch_workflow(pipeline_info, "ondemand", ignore_previous_runs=True)
-        status = await ops.monitor_workflow(run_id=pipeline_run_id, wait_time=60 * 2)
-        print(status)
-        if not status.is_successful:
-            raise SystemExit(f"pipeline failed with status: {status.status}")
-        # Don't continue to synindex if only pipeline was requested
-        if 'all' not in step:
-            return
+        elif current_step == 'synstage':
+            print('starting synstage')
+            synstage_info = prepare_synstage_info(dataset)
+            synstage_run_id = ops.launch_workflow(synstage_info, "spot", ignore_previous_runs=True)
+            status = await ops.monitor_workflow(run_id=synstage_run_id, wait_time=60 * 2)
+            print(status)
+            if not status.is_successful:
+                raise SystemExit(f"synstage failed with status: {status.status}")
 
-    if 'all' in step or 'synindex' in step:
-        print('starting synindex')
-        synindex_info = prepare_synindex_info(dataset)
-        synindex_run_id = ops.launch_workflow(synindex_info, "spot", ignore_previous_runs=True)
-        status = await ops.monitor_workflow(run_id=synindex_run_id, wait_time=60 * 2)
-        print(status)
-        if not status.is_successful:
-            raise SystemExit(f"synindex failed with status: {status.status}")
+        elif current_step == 'pipeline':
+            print('starting pipeline')
+            pipeline_info = prepare_pipeline_info(dataset)
+            pipeline_run_id = ops.launch_workflow(pipeline_info, "ondemand", ignore_previous_runs=True)
+            status = await ops.monitor_workflow(run_id=pipeline_run_id, wait_time=60 * 2)
+            print(status)
+            if not status.is_successful:
+                raise SystemExit(f"pipeline failed with status: {status.status}")
+
+        elif current_step == 'synindex':
+            print('starting synindex')
+            synindex_info = prepare_synindex_info(dataset)
+            synindex_run_id = ops.launch_workflow(synindex_info, "spot", ignore_previous_runs=True)
+            status = await ops.monitor_workflow(run_id=synindex_run_id, wait_time=60 * 2)
+            print(status)
+            if not status.is_successful:
+                raise SystemExit(f"synindex failed with status: {status.status}")
 
 
 def load_params_from_json(params_path: Path) -> dict:
@@ -289,7 +308,7 @@ async def main(
         prepare_pipeline_info: Callable that returns LaunchInfo for the pipeline-specific step
     """
     parser = argparse.ArgumentParser()
-    parser.add_argument('step', nargs='*', default='all', help='Processing step (Default: all)')
+    parser.add_argument('step', nargs='*', default=['all'], help='Processing step (Default: all)')
     parser.add_argument('--run-number', type=int, default=1, help='Run version number (Default: 1). Increment to preserve previous outputs.')
     args = parser.parse_args()
 

@@ -60,7 +60,7 @@ python recipes/rnaseq_workflow.py --run-number 2
   - Pipeline: [nf-core/rnaseq](https://github.com/nf-core/rnaseq) v3.11.2
   - Config: GRCh38, STAR + Salmon quantification
   - Based on NF-OSI Nextflow Data Processing standard
-  - Input samplesheet: syn76921873
+  - Input samplesheet: syn76923670
   - Output folder: syn76921355
   - Uses: base_rna.py (shared module)
   - Usage: See docstring in `rnaseq_workflow.py`
