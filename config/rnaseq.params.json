@@ -1,0 +1,5 @@
+{
+    "aligner": "star_salmon",
+    "genome": "GRCh38",
+    "igenomes_base": "s3://sage-igenomes/igenomes"
+}
