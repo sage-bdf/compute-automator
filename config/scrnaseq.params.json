@@ -1,0 +1,12 @@
+{
+    "_note": "Single-cell RNA-seq via ORCA (fetch_samplesheet → synstage → scrnaseq → synindex). input_samplesheet_id: samplesheet synid. output_folder_id: output folder synid.",
+    "pipeline_name": "nf-core/scrnaseq",
+    "pipeline_revision": "4.1.0",
+    "protocol": "10XV2",
+    "aligner": "cellranger",
+    "genome": "GRCh38",
+    "fasta": "s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Sequence/WholeGenomeFasta/genome.fa",
+    "gtf": "s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Annotation/Genes/genes.gtf",
+    "input_samplesheet_id": "syn76926335",
+    "output_folder_id": "syn76921961"
+}
