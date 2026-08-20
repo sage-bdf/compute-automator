@@ -8,7 +8,7 @@ ORCA recipes for Biomedical Data Fabric (BDF) data processing on Nextflow Tower.
 |----------|--------|----------|--------|
 | WES/WGS | sarek_somatic_workflow.py | nf-core/sarek v3.1.2 | ✓ |
 | Bulk RNA-seq | rnaseq_workflow.py | nf-core/rnaseq v3.11.2 | ✓ |
-| Single-cell RNA-seq | scrnaseq_workflow.py | nf-core/scrnaseq | TBD |
+| Single-cell RNA-seq | scrnaseq_workflow.py | nf-core/scrnaseq v4.1.0 | ✓ |
 | Spatial transcriptomics | [External](https://github.com/sage-bdf/synapse_spatialvi_nf_pipeline) | nf-core/spatialvi dev | ✓ |
 
 
@@ -33,12 +33,14 @@ Run a recipe (all steps by default):
 ```bash
 python recipes/sarek_somatic_workflow.py
 python recipes/rnaseq_workflow.py
+python recipes/scrnaseq_workflow.py
 ```
 
 Run specific steps:
 ```bash
 python recipes/rnaseq_workflow.py fetch_samplesheet synstage
 python recipes/rnaseq_workflow.py pipeline synindex
+python recipes/scrnaseq_workflow.py synstage pipeline
 ```
 
 Increment run number to preserve previous outputs:
@@ -66,7 +68,11 @@ python recipes/rnaseq_workflow.py --run-number 2
   - Usage: See docstring in `rnaseq_workflow.py`
 
 - **scrnaseq_workflow.py**: Single-cell RNA-seq processing
-  - Status: TBD (configuration pending test data validation)
+  - Pipeline: [nf-core/scrnaseq](https://github.com/nf-core/scrnaseq) v4.1.0
+  - Config: GRCh38, CellRanger aligner (10x Chromium v2)
+  - Input samplesheet: syn76926335
+  - Output folder: syn76921961
+  - Uses: base_rna.py (shared module)
   - Usage: See docstring in `scrnaseq_workflow.py`
 
 ## Implementation
