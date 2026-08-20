@@ -39,8 +39,8 @@ python recipes/scrnaseq_workflow.py
 Run specific steps:
 ```bash
 python recipes/rnaseq_workflow.py fetch_samplesheet synstage
-python recipes/rnaseq_workflow.py pipeline synindex
-python recipes/scrnaseq_workflow.py synstage pipeline
+python recipes/rnaseq_workflow.py rnaseq synindex
+python recipes/scrnaseq_workflow.py synstage scrnaseq
 ```
 
 Increment run number to preserve previous outputs:

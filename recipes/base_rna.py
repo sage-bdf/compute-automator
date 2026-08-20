@@ -142,19 +142,27 @@ async def run_workflows(ops: NextflowTowerOps, dataset: Dataset, steps: list, mo
             syn = Synapse()
             syn.login()
             fetch_samplesheet(syn, dataset)
-        else:
-            info_map = {
-                'synstage': prepare_synstage_info(dataset),
-                modality: prepare_pipeline(dataset),
-                'synindex': prepare_synindex_info(dataset),
-            }
-            print(f'starting {step}')
-            launch_type = "ondemand" if step == modality else "spot"
-            run_id = ops.launch_workflow(info_map[step], launch_type, ignore_previous_runs=True)
+        elif step == 'synstage':
+            print('starting synstage')
+            run_id = ops.launch_workflow(prepare_synstage_info(dataset), "spot", ignore_previous_runs=True)
             status = await ops.monitor_workflow(run_id, wait_time=120)
             print(status)
             if not status.is_successful:
-                raise SystemExit(f"{step} failed: {status.state}")
+                raise SystemExit(f"synstage failed: {status.state}")
+        elif step == modality:
+            print(f'starting {modality}')
+            run_id = ops.launch_workflow(prepare_pipeline(dataset), "ondemand", ignore_previous_runs=True)
+            status = await ops.monitor_workflow(run_id, wait_time=120)
+            print(status)
+            if not status.is_successful:
+                raise SystemExit(f"{modality} failed: {status.state}")
+        elif step == 'synindex':
+            print('starting synindex')
+            run_id = ops.launch_workflow(prepare_synindex_info(dataset), "spot", ignore_previous_runs=True)
+            status = await ops.monitor_workflow(run_id, wait_time=120)
+            print(status)
+            if not status.is_successful:
+                raise SystemExit(f"synindex failed: {status.state}")
 
 
 def load_params_from_json(params_path: Path) -> dict:
@@ -184,7 +192,8 @@ async def main(generate_datasets: Callable[[int], list[Dataset]], prepare_pipeli
 
     parser = argparse.ArgumentParser()
     step_names = ['fetch_samplesheet', 'synstage', modality, 'synindex']
-    parser.add_argument('step', nargs='*', default=['all'], help=f"Step(s) to run: {', '.join(step_names)} (default: all)")
+    parser.add_argument('step', nargs='*', default=['all'], help=f"Step(s) to run: {', '.join(step_names)} (default: all)",
+                       choices=step_names + ['all'])
     parser.add_argument('--run-number', type=int, default=1, help='Run version (default: 1)')
     args = parser.parse_args()
     ops = get_tower_ops()
