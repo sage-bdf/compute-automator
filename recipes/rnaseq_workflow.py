@@ -28,7 +28,7 @@ from pathlib import Path
 
 from orca.services.nextflowtower.models import LaunchInfo
 
-from base_rna import Dataset, load_params_from_json, main, NXF_VER, NEXTFLOW_CONFIG
+from base_rna import Dataset, load_params_from_json, prepare_pipeline_launch_info, main
 
 # Load science params (aligner, genome, etc.) from config/rnaseq.params.json
 PARAMS_PATH = Path(__file__).parent.parent / "config" / "rnaseq.params.json"
@@ -39,35 +39,25 @@ def generate_datasets(run_number: int = 1) -> list[Dataset]:
 
     Define datasets with Synapse IDs for samplesheets and output folders.
     """
+    params = load_params_from_json(PARAMS_PATH)
     return [
         Dataset(
-            id="syn76923670",
+            id=params["input_samplesheet_id"],
             samplesheet="rnaseq_samplesheet.csv",
             staging_key="samplesheets/RNAseq/",
             bucket_name="ntap-add5-project-tower-bucket",
-            synapse_id_for_output="syn76921355",
+            synapse_id_for_output=params["output_folder_id"],
             run_number=run_number,
         ),
     ]
 
 
 def prepare_rnaseq_launch_info(dataset: Dataset) -> LaunchInfo:
-    """Generate LaunchInfo for nf-core/rnaseq workflow run (modality-specific).
+    """Generate LaunchInfo for nf-core/rnaseq workflow run.
 
-    Loads params from rnaseq.params.json, adds input/outdir, returns Tower launch spec.
+    Delegates to shared factory in base_rna.py.
     """
-    params = load_params_from_json(PARAMS_PATH)
-    params["input"] = dataset.staged_samplesheet_location
-    params["outdir"] = dataset.output_directory
-    return LaunchInfo(
-        run_name=f"rnaseq_GRCh38_{dataset.id}_{dataset.run_number}",
-        pipeline="nf-core/rnaseq",
-        revision="3.11.2",
-        profiles=["sage"],
-        params=params,
-        pre_run_script=f"export NXF_VER={NXF_VER}",
-        nextflow_config=NEXTFLOW_CONFIG,
-    )
+    return prepare_pipeline_launch_info("rnaseq", PARAMS_PATH, dataset)
 
 
 if __name__ == "__main__":

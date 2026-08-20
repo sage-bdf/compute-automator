@@ -1,5 +1,11 @@
 {
+    "_note": "Bulk RNA-seq via ORCA (fetch_samplesheet → synstage → rnaseq → synindex). input_samplesheet_id: samplesheet synid. output_folder_id: output folder synid.",
+    "pipeline_name": "nf-core/rnaseq",
+    "pipeline_revision": "3.11.2",
     "aligner": "star_salmon",
     "genome": "GRCh38",
-    "igenomes_base": "s3://sage-igenomes/igenomes"
+    "fasta": "s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Sequence/WholeGenomeFasta/genome.fa",
+    "gtf": "s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Annotation/Genes/genes.gtf",
+    "input_samplesheet_id": "syn76923670",
+    "output_folder_id": "syn76921355"
 }
