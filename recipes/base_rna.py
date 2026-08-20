@@ -1,11 +1,12 @@
 """Shared infrastructure for BDF ORCA recipes.
 
-Common Tower auth, Dataset structure, and workflow orchestration (fetch_samplesheet -> synstage -> modality-specific pipeline -> synindex)
+Common Tower auth, Dataset structure, and workflow orchestration.
 """
 import asyncio
 import argparse
 import json
 import os
+import sys
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -16,304 +17,176 @@ from orca.services.nextflowtower.config import NextflowTowerConfig
 from orca.services.nextflowtower.models import LaunchInfo
 from synapseclient import Synapse
 
+NXF_VER = "25.10.2"
+NEXTFLOW_CONFIG = "process { errorStrategy = 'retry'; maxRetries = 3 }"
+
 _s3_client = None
+_tower_client_patched = False
+
 
 def _get_s3_client():
-    """Lazy-load S3 client to avoid requiring 'tower' AWS profile at import time."""
+    """Lazy-load S3 client (avoids requiring 'tower' AWS profile at import time)."""
     global _s3_client
     if _s3_client is None:
         import boto3
-        session = boto3.Session(profile_name="tower")
-        _s3_client = session.client("s3")
+        _s3_client = boto3.Session(profile_name="tower").client("s3")
     return _s3_client
 
-# Nextflow version (same as sarek_somatic_workflow baseline)
-NXF_VER = "25.10.2"
-
-# Shared process configuration: retry failed tasks up to 3 times
-NEXTFLOW_CONFIG = """
-process {
-  errorStrategy = 'retry'
-  maxRetries = 3
-}
-"""
-
-
-_tower_client_patched = False
 
 def _patch_tower_client_double_slash():
-    """Fix py-orca URL construction: path has leading slash, causing // in URL and 401.
-
-    orca builds request URLs by joining the api_endpoint with a leading-slash path,
-    which yields e.g. https://tower.sagebionetworks.org/api//workflow/launch. The
-    doubled slash triggers 400/401 responses from the Tower API. Stripping the leading
-    slash from each request path fixes it.
-
-    Idempotent: only patches once per process.
-    """
+    """Fix py-orca URL double-slash bug (idempotent)."""
     global _tower_client_patched
     if _tower_client_patched:
         return
-
-    _original_request = NextflowTowerClient.request
-
-    def _patched_request(self, method: str, path: str, **kwargs):
-        path = path.lstrip("/")
-        return _original_request(self, method, path, **kwargs)
-
-    NextflowTowerClient.request = _patched_request
+    _original = NextflowTowerClient.request
+    NextflowTowerClient.request = lambda self, m, p, **kw: _original(self, m, p.lstrip("/"), **kw)
     _tower_client_patched = True
 
 
 def get_tower_ops() -> NextflowTowerOps:
-    """Create NextflowTowerOps with config from the three TOWER_* environment variables.
-
-    Uses explicit TOWER_ACCESS_TOKEN / TOWER_WORKSPACE / TOWER_API_ENDPOINT rather than
-    the packed NEXTFLOWTOWER_CONNECTION_URI, and applies the double-slash URL patch.
-    """
+    """Create Tower ops from TOWER_* env vars (with double-slash URL fix)."""
     _patch_tower_client_double_slash()
-
     token = os.environ.get("TOWER_ACCESS_TOKEN") or os.environ.get("TOWER_AUTH_TOKEN")
     workspace = os.environ.get("TOWER_WORKSPACE")
-    api_endpoint = os.environ.get("TOWER_API_ENDPOINT", "https://api.tower.nf")
-
     if not token:
-        raise SystemExit(
-            "Missing TOWER_ACCESS_TOKEN or TOWER_AUTH_TOKEN. Set one before running:\n"
-            "  export TOWER_ACCESS_TOKEN=your-token"
-        )
+        raise SystemExit("Missing TOWER_ACCESS_TOKEN or TOWER_AUTH_TOKEN")
     if not workspace:
-        raise SystemExit(
-            "Missing TOWER_WORKSPACE. Set it before running (org/workspace format):\n"
-            "  export TOWER_WORKSPACE=sage-bionetworks/ntap-add5-project"
-        )
-
-    config = NextflowTowerConfig(
-        api_endpoint=api_endpoint.rstrip("/"),
+        raise SystemExit("Missing TOWER_WORKSPACE (org/workspace format)")
+    return NextflowTowerOps(NextflowTowerConfig(
+        api_endpoint=os.environ.get("TOWER_API_ENDPOINT", "https://api.tower.nf").rstrip("/"),
         auth_token=token,
         workspace=workspace,
-    )
-    return NextflowTowerOps(config=config)
+    ))
 
 
 @dataclass
 class Dataset:
-    """Base dataset configuration for all modalities."""
-
+    """Dataset config: samplesheet location, S3 paths, output folder."""
     id: str
-    """The synapse id for the samplesheet."""
-
     samplesheet: str
-    """The name of the samplesheet to run."""
-
     synapse_id_for_output: str
-    """The synapse id for the output folder, this is where the output will be uploaded to."""
-
     bucket_name: str
-    """The name of the bucket to stage the samplesheet in."""
-
     staging_key: str
-    """The key in the S3 bucket where this workflow is going to run."""
-
     run_number: int = 1
-    """Run version number. Passed from CLI --run-number; increment to preserve previous outputs."""
-
     version: int | None = None
-    """Synapse version of the samplesheet to fetch. None = latest (default); set to
-    pin a specific curated version for reproducible reruns."""
 
     @property
     def samplesheet_location(self) -> str:
-        """The location where the unstaged samplesheet is located."""
         return f"{self.samplesheet_location_prefix}{self.samplesheet}"
 
     @property
     def samplesheet_to_stage_key(self) -> str:
-        """The key in the S3 bucket where the samplesheet is going to be staged."""
         return f"{self.staging_key}to_stage/{self.samplesheet}"
 
     @property
     def staged_samplesheet_location(self) -> str:
-        """The S3 uri where the samplesheet is staged."""
         return f"{self.staging_location}synstage_{self.id}/{self.samplesheet}"
 
     @property
     def staging_location(self) -> str:
-        """The S3 uri where the workflow is going to be run."""
         return f"s3://{self.bucket_name}/{self.staging_key}"
 
     @property
     def samplesheet_location_prefix(self) -> str:
-        """The S3 uri where the unstaged samplesheet is located."""
         return f"s3://{self.bucket_name}/{self.staging_key}to_stage/"
 
     @property
     def output_directory(self) -> str:
-        """The S3 uri where the output is going to be uploaded to."""
         return f"s3://{self.bucket_name}/outputs/{self.id}_{self.run_number}/"
 
     @property
     def synstage_run_name(self) -> str:
-        """The name of the synstage run (no run_number to align with staged_samplesheet_location)."""
         return f"synstage_{self.id}"
 
     @property
     def synindex_run_name(self) -> str:
-        """The name of the synindex run."""
         return f"synindex_{self.id}_{self.run_number}"
 
 
 def fetch_samplesheet(syn: Synapse, dataset: Dataset) -> None:
-    """Download the samplesheet from Synapse and upload it to S3.
+    """Download samplesheet from Synapse, upload to S3."""
+    path = syn.get(dataset.id, version=dataset.version).path
+    _get_s3_client().upload_file(path, dataset.bucket_name, dataset.samplesheet_to_stage_key)
 
-    Arguments:
-        syn: The logged in synapse instance
-        dataset: The dataset to stage the samplesheet for
-    """
-    samplesheet_file = syn.get(dataset.id, version=dataset.version)
-    samplesheet_file_path = samplesheet_file.path
-    _get_s3_client().upload_file(
-        samplesheet_file_path, dataset.bucket_name, dataset.samplesheet_to_stage_key
+
+def _launch_nf_synapse(dataset: Dataset, entry: str) -> LaunchInfo:
+    """Shared nf-synapse launcher for synstage/synindex."""
+    params = {
+        "synstage": {"input": dataset.samplesheet_location, "outdir": dataset.staging_location},
+        "synindex": {"s3_prefix": dataset.output_directory, "parent_id": dataset.synapse_id_for_output},
+    }[entry]
+    params["entry"] = entry
+    run_name = dataset.synstage_run_name if entry == "synstage" else dataset.synindex_run_name
+    return LaunchInfo(
+        run_name=run_name, pipeline="Sage-Bionetworks-Workflows/nf-synapse", revision="main",
+        profiles=["sage"], params=params, workspace_secrets=["SYNAPSE_AUTH_TOKEN"]
     )
 
 
 def prepare_synstage_info(dataset: Dataset) -> LaunchInfo:
-    """Generate LaunchInfo for nf-synstage.
-
-    Arguments:
-        dataset: The dataset to stage
-
-    Returns:
-        The Nextflow Tower workflow launch specification for synstage step
-    """
-    return LaunchInfo(
-        run_name=dataset.synstage_run_name,
-        pipeline="Sage-Bionetworks-Workflows/nf-synapse",
-        revision="main",
-        profiles=["sage"],
-        params={
-            "input": dataset.samplesheet_location,
-            "outdir": dataset.staging_location,
-            "entry": "synstage",
-        },
-        workspace_secrets=["SYNAPSE_AUTH_TOKEN"]
-    )
+    return _launch_nf_synapse(dataset, "synstage")
 
 
 def prepare_synindex_info(dataset: Dataset) -> LaunchInfo:
-    """Generate LaunchInfo for nf-synindex workflow run.
-
-    Arguments:
-        dataset: The dataset to index
-
-    Returns:
-        The Nextflow Tower workflow launch specification for synindex step
-    """
-    return LaunchInfo(
-        run_name=dataset.synindex_run_name,
-        pipeline="Sage-Bionetworks-Workflows/nf-synapse",
-        revision="main",
-        profiles=["sage"],
-        params={
-            "s3_prefix": dataset.output_directory,
-            "parent_id": dataset.synapse_id_for_output,
-            "entry": "synindex",
-        },
-        workspace_secrets=["SYNAPSE_AUTH_TOKEN"]
-    )
+    return _launch_nf_synapse(dataset, "synindex")
 
 
-async def run_workflows(
-    ops: NextflowTowerOps,
-    dataset: Dataset,
-    step: list,
-    prepare_pipeline_info: Callable[[Dataset], LaunchInfo],
-) -> None:
-    """Orchestrate the four-step workflow: fetch_samplesheet, synstage, pipeline, synindex.
+async def run_workflows(ops: NextflowTowerOps, dataset: Dataset, steps: list, modality: str, prepare_pipeline: Callable) -> None:
+    """Run requested steps sequentially; fail fast on error."""
+    step_order = ['fetch_samplesheet', 'synstage', modality, 'synindex']
+    steps_to_run = step_order if 'all' in steps else [s for s in step_order if s in steps]
 
-    Runs requested steps in sequence, checking success after each step before proceeding.
-    Stops if any step fails.
-
-    Arguments:
-        ops: NextflowTowerOps instance
-        dataset: The dataset to process
-        step: List of steps to run (e.g., ['all'], ['synstage', 'pipeline']) or 'all' for all steps
-        prepare_pipeline_info: Callable that returns LaunchInfo for the pipeline-specific step
-    """
-    # Determine which steps to run
-    step_order = ['fetch_samplesheet', 'synstage', 'pipeline', 'synindex']
-    if 'all' in step:
-        steps_to_run = step_order
-    else:
-        steps_to_run = [s for s in step_order if s in step]
-
-    # Execute requested steps in order
-    for current_step in steps_to_run:
-        if current_step == 'fetch_samplesheet':
+    for step in steps_to_run:
+        if step == 'fetch_samplesheet':
             print('fetching samplesheet')
             syn = Synapse()
             syn.login()
             fetch_samplesheet(syn, dataset)
-
-        elif current_step == 'synstage':
-            print('starting synstage')
-            synstage_info = prepare_synstage_info(dataset)
-            synstage_run_id = ops.launch_workflow(synstage_info, "spot", ignore_previous_runs=True)
-            status = await ops.monitor_workflow(run_id=synstage_run_id, wait_time=60 * 2)
+        else:
+            info_map = {
+                'synstage': prepare_synstage_info(dataset),
+                modality: prepare_pipeline(dataset),
+                'synindex': prepare_synindex_info(dataset),
+            }
+            print(f'starting {step}')
+            launch_type = "ondemand" if step == modality else "spot"
+            run_id = ops.launch_workflow(info_map[step], launch_type, ignore_previous_runs=True)
+            status = await ops.monitor_workflow(run_id, wait_time=120)
             print(status)
             if not status.is_successful:
-                raise SystemExit(f"synstage failed with status: {status.status}")
-
-        elif current_step == 'pipeline':
-            print('starting pipeline')
-            pipeline_info = prepare_pipeline_info(dataset)
-            pipeline_run_id = ops.launch_workflow(pipeline_info, "ondemand", ignore_previous_runs=True)
-            status = await ops.monitor_workflow(run_id=pipeline_run_id, wait_time=60 * 2)
-            print(status)
-            if not status.is_successful:
-                raise SystemExit(f"pipeline failed with status: {status.status}")
-
-        elif current_step == 'synindex':
-            print('starting synindex')
-            synindex_info = prepare_synindex_info(dataset)
-            synindex_run_id = ops.launch_workflow(synindex_info, "spot", ignore_previous_runs=True)
-            status = await ops.monitor_workflow(run_id=synindex_run_id, wait_time=60 * 2)
-            print(status)
-            if not status.is_successful:
-                raise SystemExit(f"synindex failed with status: {status.status}")
+                raise SystemExit(f"{step} failed: {status.state}")
 
 
 def load_params_from_json(params_path: Path) -> dict:
-    """Load science params from JSON, filtering out internal notes (keys starting with '_').
-
-    Reusable across all RNA modalities. Recipes call this once per prepare_*_launch_info().
-
-    Arguments:
-        params_path: Path to the .params.json file
-
-    Returns:
-        Dictionary of params ready for pipeline
-    """
+    """Load params from JSON, skip keys starting with '_'."""
     return {k: v for k, v in json.loads(params_path.read_text()).items() if not k.startswith("_")}
 
 
-async def main(
-    generate_datasets: Callable[[int], list[Dataset]],
-    prepare_pipeline_info: Callable[[Dataset], LaunchInfo],
-) -> None:
-    """Main entry point for all modality recipes.
+def prepare_pipeline_launch_info(modality: str, params_path: Path, dataset: Dataset) -> LaunchInfo:
+    """Generic factory for RNA pipeline launches (rnaseq/scrnaseq)."""
+    params = load_params_from_json(params_path)
+    pipeline_name = params.pop("pipeline_name")
+    revision = params.pop("pipeline_revision")
+    genome = params.get("genome")
+    params["input"] = dataset.staged_samplesheet_location
+    params["outdir"] = dataset.output_directory
+    return LaunchInfo(
+        run_name=f"{modality}_{genome}_{dataset.id}_{dataset.run_number}",
+        pipeline=pipeline_name, revision=revision, profiles=["sage"], params=params,
+        pre_run_script=f"export NXF_VER={NXF_VER}", nextflow_config=NEXTFLOW_CONFIG,
+    )
 
-    Arguments:
-        generate_datasets: Callable that returns list of datasets for this modality
-        prepare_pipeline_info: Callable that returns LaunchInfo for the pipeline-specific step
-    """
+
+async def main(generate_datasets: Callable[[int], list[Dataset]], prepare_pipeline: Callable) -> None:
+    """Main entry point for all recipes."""
+    # Extract modality from script name: rnaseq_workflow.py → rnaseq
+    modality = Path(sys.argv[0]).stem.replace('_workflow', '')
+
     parser = argparse.ArgumentParser()
-    parser.add_argument('step', nargs='*', default=['all'], help='Processing step (Default: all)')
-    parser.add_argument('--run-number', type=int, default=1, help='Run version number (Default: 1). Increment to preserve previous outputs.')
+    step_names = ['fetch_samplesheet', 'synstage', modality, 'synindex']
+    parser.add_argument('step', nargs='*', default=['all'], help=f"Step(s) to run: {', '.join(step_names)} (default: all)")
+    parser.add_argument('--run-number', type=int, default=1, help='Run version (default: 1)')
     args = parser.parse_args()
-
     ops = get_tower_ops()
     datasets = generate_datasets(run_number=args.run_number)
-    runs = [run_workflows(ops, dataset, args.step, prepare_pipeline_info) for dataset in datasets]
-    statuses = await asyncio.gather(*runs)
-    print(statuses)
+    await asyncio.gather(*(run_workflows(ops, ds, args.step, modality, prepare_pipeline) for ds in datasets))
