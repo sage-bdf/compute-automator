@@ -22,7 +22,12 @@ Each recipe follows a standardized four-step workflow orchestrated by ORCA (Next
 
 ## Usage
 
-Set environment variables first:
+Install dependencies first (in your environment):
+```bash
+pip install py-orca synapseclient
+```
+
+Set environment variables:
 ```bash
 export TOWER_ACCESS_TOKEN="<your-token>"
 export TOWER_WORKSPACE="sage-bionetworks/ntap-add5-project"
@@ -69,11 +74,26 @@ python recipes/rnaseq_workflow.py --run-number 2
 
 - **scrnaseq_workflow.py**: Single-cell RNA-seq processing
   - Pipeline: [nf-core/scrnaseq](https://github.com/nf-core/scrnaseq) v4.1.0
-  - Config: GRCh38, CellRanger aligner (10x Chromium v2)
+  - Config: GRCh38 reference (10x CellRanger pre-built), CellRanger (alignment) + CellBender (ambient RNA correction)
   - Input samplesheet: syn76926335
   - Output folder: syn76921961
   - Uses: base_rna.py (shared module)
   - Usage: See docstring in `scrnaseq_workflow.py`
+
+#### 10x Chromium v2 Protocol Verification
+
+The sample data originates from Olah et al. 2020 (https://www.nature.com/articles/s41467-020-19737-2), 
+which specifies in the Methods:
+
+> "Upon dissolution of the Single Cell 3′ Gel Bead in a GEM, primers containing (i) an Illumina R1 
+> sequence (read 1 sequencing primer), (ii) a **16 nucleotide 10x Barcode**, (iii) a **10 nucleotide 
+> Unique Molecular Identifier (UMI)**, and (iv) a poly-dT primer sequence..."
+
+This matches **10x Chromium v2** specification:
+- Read 1: 26 cycles = 16bp cell barcode + 10bp UMI
+- (Note: 10x Chromium v3 uses 16bp barcode + 12bp UMI)
+
+Reference: [10x Chromium v2 Structure](https://scg-lib-structs.readthedocs.io/en/latest/ge/10xChromium3v2.html)
 
 ## Implementation
 

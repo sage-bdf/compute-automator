@@ -1,12 +1,11 @@
 {
-    "_note": "Single-cell RNA-seq via ORCA (fetch_samplesheet → synstage → scrnaseq → synindex). input_samplesheet_id: samplesheet synid. output_folder_id: output folder synid.",
+    "_note": "Single-cell RNA-seq via ORCA (fetch_samplesheet → synstage → scrnaseq → synindex). Sample from Olah et al. 2020 (https://www.nature.com/articles/s41467-020-19737-2) which used 10x Chromium v2 (16bp barcode + 10bp UMI per Methods). Uses CellRanger aligner with pre-built 10x GRCh38 reference directly. input_samplesheet_id: samplesheet synid. output_folder_id: output folder synid.",
     "pipeline_name": "nf-core/scrnaseq",
     "pipeline_revision": "4.1.0",
     "protocol": "10XV2",
     "aligner": "cellranger",
     "genome": "GRCh38",
-    "fasta": "s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Sequence/WholeGenomeFasta/genome.fa",
-    "gtf": "s3://sage-igenomes/igenomes/Homo_sapiens/NCBI/GRCh38/Annotation/Genes/genes.gtf",
+    "cellranger_index": "s3://ntap-add5-project-tower-bucket/reference/10x_references/refdata-gex-GRCh38-2020-A",
     "input_samplesheet_id": "syn76926335",
     "output_folder_id": "syn76921961"
 }
