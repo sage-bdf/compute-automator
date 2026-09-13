@@ -355,6 +355,8 @@ async def run_workflows(ops: NextflowTowerOps, dataset: Dataset, step):
         synindex_run_id = ops.launch_workflow(synindex_info, "spot", ignore_previous_runs=True)
         status = await ops.monitor_workflow(run_id=synindex_run_id, wait_time=60 * 2)
         print(status)
+        if not status.is_successful:
+            raise SystemExit(f"synindex failed: {status.state}")
 
 
 if __name__ == "__main__":
