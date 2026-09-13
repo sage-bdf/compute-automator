@@ -337,6 +337,8 @@ async def run_workflows(ops: NextflowTowerOps, dataset: Dataset, step):
         synstage_run_id = ops.launch_workflow(synstage_info, "spot", ignore_previous_runs=True)
         status = await ops.monitor_workflow(run_id=synstage_run_id, wait_time=60 * 2)
         print(status)
+        if not status.is_successful:
+            raise SystemExit(f"synstage failed: {status.state}")
 
     if 'all' in step or 'sarek' in step:
         print('starting data processing pipeline')
