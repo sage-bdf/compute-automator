@@ -346,6 +346,8 @@ async def run_workflows(ops: NextflowTowerOps, dataset: Dataset, step):
         sarek_run_id = ops.launch_workflow(sarek_info, "ondemand", ignore_previous_runs=True)  # on-demand: sarek is the long step; avoids spot reclaim mid-run
         status = await ops.monitor_workflow(run_id=sarek_run_id, wait_time=60 * 2)
         print(status)
+        if not status.is_successful:
+            raise SystemExit(f"sarek failed: {status.state}")
 
     if 'all' in step or 'synindex' in step:
         print('starting synindex')
