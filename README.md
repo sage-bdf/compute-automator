@@ -6,7 +6,8 @@ ORCA recipes for Biomedical Data Fabric (BDF) data processing on Nextflow Tower.
 
 | Modality | Recipe | Pipeline | Status |
 |----------|--------|----------|--------|
-| WES/WGS | sarek_somatic_workflow.py | nf-core/sarek v3.1.2 | ✓ |
+| WES (whole exome sequencing) | sarek_wes_somatic_workflow.py | nf-core/sarek v3.1.2 | ✓ |
+| WGS (whole genome sequencing) | sarek_wgs_workflow.py | nf-core/sarek v3.1.2 | ✓ |
 | Bulk RNA-seq | rnaseq_workflow.py | nf-core/rnaseq v3.11.2 | ✓ |
 | Single-cell RNA-seq | scrnaseq_workflow.py | nf-core/scrnaseq v4.1.0 | ✓ |
 | Spatial transcriptomics | [External](https://github.com/sage-bdf/synapse_spatialvi_nf_pipeline) | nf-core/spatialvi dev | ✓ |
@@ -38,7 +39,8 @@ export TOWER_API_ENDPOINT="https://tower.sagebionetworks.org/api"
 
 Run a recipe (all steps by default):
 ```bash
-python recipes/sarek_somatic_workflow.py
+python recipes/sarek_wes_somatic_workflow.py
+python recipes/sarek_wgs_workflow.py
 python recipes/rnaseq_workflow.py
 python recipes/scrnaseq_workflow.py
 ```
@@ -57,28 +59,38 @@ python recipes/rnaseq_workflow.py --run-number 2
 
 ## Recipes
 
-- **sarek_somatic_workflow.py**: WES variant calling (tumor vs. matched normal)
+- **sarek_wes_somatic_workflow.py**: WES (whole exome) variant calling (tumor vs. matched normal)
   - Pipeline: [nf-core/sarek](https://github.com/nf-core/sarek) v3.1.2
   - Config: GATK.GRCh38, WES + Agilent V6 intervals, callers: strelka, mutect2, vep
   - Based on [JHU NF1 Biobank release-2](https://github.com/nf-osi/biobank-release-2) (JH_batch1)
   - Input samplesheet: [syn52236715](https://www.synapse.org/Synapse:syn52236715)
+  - Output folder: [syn76340288](https://www.synapse.org/Synapse:syn76340288)
   - **Note**: Standalone (does not use base_rna.py)
-  - Usage: See docstring in `sarek_somatic_workflow.py`
+  - Usage: See docstring in `sarek_wes_somatic_workflow.py`
+
+- **sarek_wgs_workflow.py**: WGS (whole genome) variant calling (tumor vs. matched normal)
+  - Pipeline: [nf-core/sarek](https://github.com/nf-core/sarek) v3.1.2
+  - Config: GATK.GRCh38, whole genome calling, callers: strelka, mutect2, vep
+  - Derived from sarek_wes_somatic_workflow.py
+  - Input samplesheet: [syn77362192](https://www.synapse.org/Synapse:syn77362192)
+  - Output folder: [syn77361958](https://www.synapse.org/Synapse:syn77361958)
+  - **Note**: Standalone (does not use base_rna.py)
+  - Usage: See docstring in `sarek_wgs_workflow.py`
 
 - **rnaseq_workflow.py**: Bulk RNA-seq alignment and quantification
   - Pipeline: [nf-core/rnaseq](https://github.com/nf-core/rnaseq) v3.11.2
   - Config: GRCh38, STAR + Salmon quantification
   - Based on NF-OSI Nextflow Data Processing standard
-  - Input samplesheet: syn76923670
-  - Output folder: syn76921355
+  - Input samplesheet: [syn76923670](https://www.synapse.org/Synapse:syn76923670)
+  - Output folder: [syn76921355](https://www.synapse.org/Synapse:syn76921355)
   - Uses: base_rna.py (shared module)
   - Usage: See docstring in `rnaseq_workflow.py`
 
 - **scrnaseq_workflow.py**: Single-cell RNA-seq processing
   - Pipeline: [nf-core/scrnaseq](https://github.com/nf-core/scrnaseq) v4.1.0
   - Config: GRCh38 reference (10x CellRanger pre-built), CellRanger (alignment) + CellBender (ambient RNA correction)
-  - Input samplesheet: syn76926335
-  - Output folder: syn76921961
+  - Input samplesheet: [syn76926335](https://www.synapse.org/Synapse:syn76926335)
+  - Output folder: [syn76921961](https://www.synapse.org/Synapse:syn76921961)
   - Uses: base_rna.py (shared module)
   - Usage: See docstring in `scrnaseq_workflow.py`
 
@@ -86,7 +98,8 @@ python recipes/rnaseq_workflow.py --run-number 2
 
 ### Recipe Structure
 
-- **WES Somatic (sarek_somatic_workflow.py)**: Self-contained with direct Tower orchestration
+- **WES Somatic (sarek_wes_somatic_workflow.py)**: Self-contained with direct Tower orchestration
+- **WGS Somatic (sarek_wgs_workflow.py)**: Self-contained with direct Tower orchestration
 - **RNA Modalities (rnaseq, scrnaseq)**: Use shared base_rna.py for standardized workflow
 
 ### base_rna.py
